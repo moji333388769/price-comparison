@@ -1,0 +1,237 @@
+
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f5f7fb">
+<title>商品比價小幫手</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f5f7fb;color:#202938;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:650px;margin:auto;padding:22px 16px 50px}
+h1{font-size:27px;margin:8px 0}
+.sub{color:#667085;font-size:14px;margin-bottom:22px}
+.panel{background:white;border-radius:18px;padding:17px;margin-bottom:16px;box-shadow:0 3px 14px #1720330b}
+h2{font-size:18px;margin:0 0 14px}
+label{display:block;font-size:13px;color:#667085;margin-bottom:5px}
+input,select{width:100%;min-width:0;padding:11px;border:1px solid #d9deea;border-radius:10px;font-size:16px;background:white;color:#202938}
+.field{margin-bottom:12px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{border:0;border-radius:11px;padding:12px 15px;font-size:15px;font-weight:650;cursor:pointer}
+.primary{background:#3459d9;color:white;width:100%}
+.secondary{background:#edf1ff;color:#2949b9}
+.delete{background:#fff0f0;color:#bd3333;padding:9px 11px}
+.item{border:1px solid #e5e8f0;border-radius:14px;padding:13px;margin-bottom:12px}
+.itemhead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+.itemhead strong{font-size:15px}
+.result{border:1px solid #e1e6f0;border-radius:12px;padding:13px;margin-top:10px}
+.result.best{border:2px solid #159568;background:#effbf5}
+.resulttop{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.price{font-size:21px;font-weight:750}
+.tag{font-size:12px;background:#d6f5e5;color:#08764b;padding:5px 8px;border-radius:20px}
+.muted{color:#667085;font-size:13px;margin-top:5px}
+.notice{font-size:13px;line-height:1.7;color:#667085}
+.actions{display:flex;gap:9px;margin-top:12px}
+.actions button{flex:1}
+footer{text-align:center;color:#8992a3;font-size:12px;margin-top:22px}
+@media(min-width:500px){main{padding-top:32px}}
+</style>
+</head>
+<body>
+<main>
+  <h1>🛒 商品比價小幫手</h1>
+  <div class="sub">輸入價格與規格，快速找出最划算的商品。</div>
+
+  <section class="panel">
+    <h2>新增商品</h2>
+    <div class="field">
+      <label for="name">商品名稱</label>
+      <input id="name" placeholder="例如：洗衣精 A" maxlength="80">
+    </div>
+    <div class="grid">
+      <div class="field">
+        <label for="amount">商品容量／數量</label>
+        <input id="amount" type="number" min="0.000001" step="any" placeholder="例如：500">
+      </div>
+      <div class="field">
+        <label for="unit">單位</label>
+        <select id="unit">
+          <option value="g">公克 (g)</option>
+          <option value="kg">公斤 (kg)</option>
+          <option value="ml">毫升 (ml)</option>
+          <option value="l">公升 (L)</option>
+          <option value="個">個／入</option>
+          <option value="包">包</option>
+          <option value="張">張</option>
+          <option value="顆">顆</option>
+          <option value="份">份</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="price">商品價格（元）</label>
+      <input id="price" type="number" min="0" step="any" placeholder="例如：149">
+    </div>
+    <button class="primary" id="add">＋ 新增商品並比較</button>
+  </section>
+
+  <section class="panel">
+    <h2>比價結果 <span id="count" class="muted"></span></h2>
+    <div id="results">
+      <p class="notice">目前還沒有商品。請在上方輸入商品資訊後新增。</p>
+    </div>
+    <div class="actions">
+      <button class="secondary" id="demo">填入範例</button>
+      <button class="secondary" id="clear">清空商品</button>
+    </div>
+    <p class="notice">※ 只會比較相同類型的單位：重量、容量或件數。不同類型不會混在一起排名。</p>
+  </section>
+  <footer>商品比價小幫手 · 資料儲存在此瀏覽器</footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const KEY = "price-helper-v1";
+let products = [];
+try {
+  const saved = localStorage.getItem(KEY);
+  if (saved) products = JSON.parse(saved);
+} catch(e) {}
+
+function group(unit) {
+  if (unit === "g" || unit === "kg") return "weight";
+  if (unit === "ml" || unit === "l") return "volume";
+  return "count";
+}
+function normalized(amount, unit) {
+  if (unit === "kg") return amount * 1000;
+  if (unit === "l") return amount * 1000;
+  return amount;
+}
+function unitLabel(unit) {
+  return ({g:"g",kg:"kg",ml:"ml",l:"L",個:"個",包:"包",張:"張",顆:"顆",份:"份"})[unit] || unit;
+}
+function money(n) {
+  return n.toLocaleString("zh-TW",{maximumFractionDigits:4});
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(products)); } catch(e) {}
+}
+function render() {
+  const out = $("results");
+  $("count").textContent = `（${products.length} 項）`;
+  if (!products.length) {
+    out.innerHTML = '<p class="notice">目前還沒有商品。請在上方輸入商品資訊後新增。</p>';
+    return;
+  }
+
+  const enriched = products.map((p,i) => ({
+    ...p, i,
+    base: normalized(p.amount,p.unit),
+    rate: p.price / normalized(p.amount,p.unit),
+    group: group(p.unit)
+  }));
+
+  const cheapest = {};
+  enriched.forEach(p => {
+    if (Number.isFinite(p.rate) && p.base > 0 &&
+        (!(p.group in cheapest) || p.rate < cheapest[p.group].rate)) {
+      cheapest[p.group] = p;
+    }
+  });
+
+  const sorted = [...enriched].sort((a,b) => {
+    if (a.group !== b.group) return a.group.localeCompare(b.group);
+    return a.rate - b.rate;
+  });
+
+  out.innerHTML = "";
+  sorted.forEach(p => {
+    const best = cheapest[p.group] === p;
+    const per = p.group === "weight" ? p.rate * 100 :
+                p.group === "volume" ? p.rate * 100 : p.rate;
+    const perUnit = p.group === "weight" ? "每 100 g" :
+                    p.group === "volume" ? "每 100 ml" : "每 1 " + unitLabel(p.unit);
+    const card = document.createElement("div");
+    card.className = "result" + (best ? " best" : "");
+
+    const top = document.createElement("div");
+    top.className = "resulttop";
+    const title = document.createElement("strong");
+    title.textContent = p.name || "未命名商品";
+    const price = document.createElement("span");
+    price.className = "price";
+    price.textContent = "$" + money(p.price);
+    top.append(title,price);
+
+    const detail = document.createElement("div");
+    detail.className = "muted";
+    detail.textContent = `${money(p.amount)} ${unitLabel(p.unit)} · ${perUnit} $${money(per)}`;
+
+    card.append(top,detail);
+    if (best) {
+      const badge = document.createElement("span");
+      badge.className = "tag";
+      badge.textContent = "目前最划算";
+      badge.style.display = "inline-block";
+      badge.style.marginTop = "9px";
+      card.append(badge);
+    }
+
+    const del = document.createElement("button");
+    del.className = "delete";
+    del.textContent = "刪除這項";
+    del.style.marginTop = "10px";
+    del.addEventListener("click", () => {
+      products.splice(p.i,1);
+      save();
+      render();
+    });
+    card.append(del);
+    out.append(card);
+  });
+}
+
+$("add").addEventListener("click", () => {
+  const name = $("name").value.trim();
+  const amount = Number($("amount").value);
+  const price = Number($("price").value);
+  const unit = $("unit").value;
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    alert("請輸入大於 0 的商品容量或數量。"); return;
+  }
+  if ($("price").value.trim() === "" || !Number.isFinite(price) || price < 0) {
+    alert("請輸入有效的商品價格。"); return;
+  }
+  products.push({name:name || "商品 " + (products.length+1),amount,price,unit});
+  save();
+  render();
+  $("name").value = "";
+  $("amount").value = "";
+  $("price").value = "";
+  $("name").focus();
+});
+
+$("clear").addEventListener("click", () => {
+  if (products.length && !confirm("確定要刪除全部商品嗎？")) return;
+  products = [];
+  save();
+  render();
+});
+
+$("demo").addEventListener("click", () => {
+  products = [
+    {name:"商品 A",amount:280,unit:"g",price:138},
+    {name:"商品 B",amount:360,unit:"g",price:149},
+    {name:"商品 C",amount:690,unit:"g",price:189}
+  ];
+  save();
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
